@@ -50,7 +50,7 @@ const PlayerBar: React.FC = () => {
       {/* Song Info */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', width: '30%' }}>
         {currentSong.imageUrl ? (
-           <img src={currentSong.imageUrl} alt={currentSong.title} style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover' }} />
+           <img src={currentSong.imageUrl} alt={currentSong.title} style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
         ) : (
            <div style={{ width: '60px', height: '60px', borderRadius: '8px', background: 'var(--bg-glass)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
              <Music size={24} color="var(--text-secondary)" />

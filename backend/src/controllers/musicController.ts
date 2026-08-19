@@ -1,79 +1,15 @@
 import { Request, Response } from 'express';
-import Song from '../models/Song';
 import History from '../models/History';
 import { AuthRequest } from '../middlewares/authMiddleware';
-
-const classifyTimeOfDay = (hour: number): string[] => {
-  if (hour >= 5 && hour < 12) return ['Energetic', 'Happy']; // Morning
-  if (hour >= 12 && hour < 17) return ['Pop', 'Rock', 'Energetic']; // Afternoon
-  if (hour >= 17 && hour < 21) return ['Acoustic', 'Ambient', 'Calm']; // Evening
-  return ['Calm', 'Acoustic', 'Sad']; // Night
-};
+import { MusicService } from '../services/musicService';
 
 export const getRecommendations = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { mood, intensity } = req.query;
+    const moodParam = mood ? String(mood) : 'trending';
     const intensityParam = Number(intensity) || 3;
-    const hour = new Date().getHours();
     
-    // Determine Time of Day tags
-    const timeTags = classifyTimeOfDay(hour);
-
-    // Fetch User History
-    const history = await History.find({ userId: req.user._id }).populate('songId').sort({ playedAt: -1 }).limit(20);
-    const historyTags: Record<string, number> = {};
-    
-    history.forEach((h: any) => {
-       if (h.songId && h.songId.moodTags) {
-         h.songId.moodTags.forEach((tag: string) => {
-           historyTags[tag] = (historyTags[tag] || 0) + 1;
-         });
-       }
-    });
-
-    const allSongs = await Song.find({});
-    
-    // Scoring Algorithm
-    const scoredSongs = allSongs.map(song => {
-      let score = 0;
-      
-      song.moodTags.forEach(tag => {
-        let moodMatch = 0;
-        let historyWeight = historyTags[tag] || 0;
-
-        // 1. Primary Mood Match
-        if (mood && tag.toLowerCase() === (mood as string).toLowerCase()) {
-          moodMatch = 1;
-        }
-        
-        // 2. Time Match
-        let timeMatch = timeTags.includes(tag) ? 1 : 0;
-
-        // 3. Apply Dynamic Scoring logic
-        // Formula: score = (moodMatch * 5) + (intensity * 2) + (timeMatch * 2) + (historyWeight * 4)
-        // We evaluate intensity only if there is a mood match to avoid padding arbitrary tags.
-        let appliedIntensity = moodMatch > 0 ? intensityParam : 0;
-        score += (moodMatch * 5) + (appliedIntensity * 2) + (timeMatch * 2) + (historyWeight * 4);
-      });
-      
-      return { song, score };
-    });
-
-    // Sort by descending score
-    scoredSongs.sort((a, b) => b.score - a.score);
-
-    let finalSongs = scoredSongs.map(s => s.song);
-
-    // If the user explicitly requested a mood, ONLY return songs that match that mood to ensure relevance
-    if (mood) {
-      finalSongs = finalSongs.filter(song => 
-        song.moodTags.some(tag => tag.toLowerCase() === (mood as string).toLowerCase())
-      );
-    }
-
-    // Return top 20
-    const recommendations = finalSongs.slice(0, 20);
-
+    const recommendations = await MusicService.getRecommendationsByMood(moodParam, intensityParam);
     res.json(recommendations);
   } catch (error) {
     res.status(500).json({ message: (error as Error).message });
@@ -88,12 +24,7 @@ export const searchSongs = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Using the text index for optimized searching
-    const songs = await Song.find(
-      { $text: { $search: q as string } },
-      { score: { $meta: 'textScore' } }
-    ).sort({ score: { $meta: 'textScore' } }).limit(10);
-
+    const songs = await MusicService.searchSongs(String(q));
     res.json(songs);
   } catch (error) {
     res.status(500).json({ message: (error as Error).message });
@@ -102,7 +33,8 @@ export const searchSongs = async (req: Request, res: Response): Promise<void> =>
 
 export const getAllSongs = async (req: Request, res: Response): Promise<void> => {
   try {
-    const songs = await Song.find({});
+    // Return some trending/default songs since we don't have a database of "all songs"
+    const songs = await MusicService.getTrendingSongs();
     res.json(songs);
   } catch (error) {
     res.status(500).json({ message: (error as Error).message });
@@ -112,19 +44,18 @@ export const getAllSongs = async (req: Request, res: Response): Promise<void> =>
 export const getRecentlyPlayed = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user._id;
-    // Get distinct recently played song IDs
+    // Get distinct recently played songs from embedded history
     const history = await History.find({ userId })
       .sort({ playedAt: -1 })
-      .limit(30)
-      .populate('songId');
+      .limit(30);
 
     const uniqueSongs: any[] = [];
     const seenIds = new Set();
 
     history.forEach((h: any) => {
-      if (h.songId && !seenIds.has(h.songId._id.toString())) {
-        uniqueSongs.push(h.songId);
-        seenIds.add(h.songId._id.toString());
+      if (h.song && h.song._id && !seenIds.has(h.song._id.toString())) {
+        uniqueSongs.push(h.song);
+        seenIds.add(h.song._id.toString());
       }
     });
 
@@ -137,39 +68,24 @@ export const getRecentlyPlayed = async (req: AuthRequest, res: Response): Promis
 export const getPersonalizedRecommendations = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user._id;
-    const hour = new Date().getHours();
-    const timeTags = classifyTimeOfDay(hour);
 
-    // Fetch User History for weighting
-    const history = await History.find({ userId }).populate('songId').sort({ playedAt: -1 }).limit(50);
-    const historyTags: Record<string, number> = {};
+    // Fetch User History to determine favorite genres or moods based on what they listened to
+    const history = await History.find({ userId }).sort({ playedAt: -1 }).limit(10);
     
-    history.forEach((h: any) => {
-       if (h.songId && h.songId.moodTags) {
-         h.songId.moodTags.forEach((tag: string) => {
-           historyTags[tag] = (historyTags[tag] || 0) + 1;
-         });
-       }
-    });
+    // If no history, return trending
+    if (!history || history.length === 0) {
+      const trending = await MusicService.getTrendingSongs();
+      res.json(trending);
+      return;
+    }
 
-    const allSongs = await Song.find({});
+    // Try to extract an artist or title from the most recent songs to use as a seed for recommendations
+    // For a generic API, searching an artist they recently listened to is a good way to personalize
+    const recentSong = history[0].song;
+    const seedArtist = recentSong?.artist || "pop";
     
-    const scoredSongs = allSongs.map(song => {
-      let score = 0;
-      song.moodTags.forEach(tag => {
-        let historyWeight = historyTags[tag] || 0;
-        let timeMatch = timeTags.includes(tag) ? 1 : 0;
-        
-        // Formula: score = (timeMatch * 5) + (historyWeight * 4) 
-        // Note: No moodMatch here as it's a general personalized recommendation
-        score += (timeMatch * 5) + (historyWeight * 4);
-      });
-      return { song, score };
-    });
-
-    scoredSongs.sort((a, b) => b.score - a.score);
-    const recommendations = scoredSongs.slice(0, 10).map(s => s.song);
-
+    const recommendations = await MusicService.searchSongs(seedArtist + " music", 10);
+    
     res.json(recommendations);
   } catch (error) {
     res.status(500).json({ message: (error as Error).message });

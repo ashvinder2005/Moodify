@@ -4,16 +4,16 @@ import { AuthRequest } from '../middlewares/authMiddleware';
 
 export const logHistory = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { songId } = req.body;
+    const { song } = req.body;
     
-    if (!songId) {
-      res.status(400).json({ message: 'Song ID is required' });
+    if (!song || !song._id) {
+      res.status(400).json({ message: 'Song object with _id is required' });
       return;
     }
 
     const historyEntry = await History.create({
       userId: req.user._id,
-      songId
+      song
     });
 
     res.status(201).json(historyEntry);
@@ -26,7 +26,6 @@ export const getHistory = async (req: AuthRequest, res: Response): Promise<void>
   try {
     const history = await History.find({ userId: req.user._id })
       .sort({ playedAt: -1 })
-      .populate('songId')
       .limit(50);
       
     res.json(history);

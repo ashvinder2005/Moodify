@@ -15,7 +15,7 @@ const SongCard: React.FC<SongCardProps> = ({ song, queue, compact }) => {
 
   const handlePlay = () => {
     playSong(song, queue);
-    api.post('/history', { songId: song._id }).catch(console.error);
+    api.post('/history', { song }).catch(console.error);
   };
 
   return (
@@ -37,7 +37,7 @@ const SongCard: React.FC<SongCardProps> = ({ song, queue, compact }) => {
     >
       <div style={{ width: '100%', aspectRatio: '1', borderRadius: '8px', background: 'var(--bg-glass)', position: 'relative', overflow: 'hidden' }}>
         {song.imageUrl ? (
-          <img src={song.imageUrl} alt={song.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={song.imageUrl} alt={song.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Play size={compact ? 24 : 40} color="var(--text-secondary)" opacity={0.5} />

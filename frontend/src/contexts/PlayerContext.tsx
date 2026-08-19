@@ -6,7 +6,7 @@ export interface Song {
   title: string;
   artist: string;
   duration: number;
-  audioUrl: string;
+  previewUrl: string;
   genre: string;
   moodTags: string[];
   imageUrl: string;
@@ -37,6 +37,16 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // When the song changes, explicitly reload the audio source.
+  // The HTML5 Audio spec requires a load() call when src changes on an
+  // existing <audio> element — without it, play() fires on the old source.
+  useEffect(() => {
+    if (audioRef.current && currentSong) {
+      audioRef.current.load();
+    }
+  }, [currentSong]);
+
+  // Separately control play / pause so that resuming never resets the track.
   useEffect(() => {
     if (audioRef.current) {
       if (isPlaying) {
@@ -86,7 +96,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       {currentSong && (
         <audio
           ref={audioRef as React.RefObject<HTMLAudioElement>}
-          src={currentSong.audioUrl}
+          src={currentSong.previewUrl}
           onEnded={nextSong}
           onTimeUpdate={(e) => {
             if (audioRef.current) {
